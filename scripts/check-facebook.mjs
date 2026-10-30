@@ -1,0 +1,18 @@
+import assert from 'node:assert/strict';
+import {normalizePost,importFacebookCapture,publicFacebookHtml,facebookGroups} from '../worker/facebook.mjs';
+const url='https://www.facebook.com/groups/campiaturda/posts/12345/';
+const post=normalizePost({url,text:'Un anunț util pentru comunitatea locală.',comments:[{text:'NU TREBUIE PĂSTRAT'}],reactions:999,author:'Nume de eliminat'},'campiaturda');
+assert(!('comments' in post));assert(!('reactions' in post));assert(!('author' in post));assert.equal(post.status,'published');assert.equal(post.body,'Un anunț util pentru comunitatea locală.');
+assert.equal(normalizePost({url,text:'Început de text… See more'},'campiaturda').status,'draft');
+assert.equal(normalizePost({url,text:'',imageOnly:true},'campiaturda').status,'draft');
+assert.throws(()=>normalizePost({url:url+'?comment_id=234',text:'Comentariu'},'campiaturda'));
+assert.throws(()=>normalizePost({url:'https://www.facebook.com/groups/other/posts/12345/',text:'Alt grup'},'campiaturda'));
+const map=new Map();const store={get:async k=>map.get(k),put:async(k,v)=>map.set(k,structuredClone(v)),settings:async()=>facebookGroups};
+const capture={groupKey:'campiaturda',groupName:'Anunțuri',public:true,posts:[{url,text:'O informație locală completă, fără comentarii.'}]};
+assert.equal((await importFacebookCapture(store,capture)).added,1);assert.equal((await importFacebookCapture(store,capture)).added,0);
+const record=map.get('articles/fb-campiaturda-12345');assert(!JSON.stringify(record).includes('NU TREBUIE PĂSTRAT'));
+await store.put('articles/'+record.id,{...record,edited:true,body:'Editare editorială'});await importFacebookCapture(store,capture);assert.equal(map.get('articles/'+record.id).body,'Editare editorială');
+const before=map.size;const result=await importFacebookCapture(store,{...capture,groupKey:'private',public:false,posts:[{url:'https://www.facebook.com/groups/private/posts/12345/',text:'Nu importa'}]});assert(result.private);assert(!map.has('articles/fb-private-12345'));
+const html='<html><h1>Grup public</h1><div role="article"><a href="'+url+'">1d</a><div data-ad-preview="message">Textul postării</div><div role="article"><a href="'+url+'?comment_id=2">Comentariu</a>Secret comentariu</div></div></html>';
+const parsed=publicFacebookHtml(html,'https://www.facebook.com/groups/campiaturda/');assert.equal(parsed.posts.length,1);assert.equal(parsed.posts[0].text,'Textul postării');assert(!JSON.stringify(parsed).includes('Secret comentariu'));
+console.log('Passed: post-body whitelist, no comments/replies/reactions/authors, private-group exclusion, cross-group rejection, duplicates, editorial preservation and incomplete drafts.');

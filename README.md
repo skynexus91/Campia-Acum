@@ -10,10 +10,12 @@ Sources, categories and articles are individual R2 JSON objects. Defaults are me
 
 Imports also run on initial access and every ten minutes when accessed; open pages refresh every ten minutes. Background cloud updates use `/api/background/run` with actions `sync`, repeated `enrich`, and `finish`, then read `/api/background/status`. The caller obtains the Site service credential from `get_site`, sends it in both `OAI-Sites-Authorization: Bearer` and `X-Background-Token`, and must match the server-only `SERVICE_AUTH_TOKEN` configured in Sites. The source exposes credential-free instructions at `/api/background/instructions`. Credentials never belong in schedule prompts or local source. A linked cloud schedule is registered in R2 only after native schedule creation succeeds. The Admin UI shows the last verified success and flags stale updates.
 
-AI and direct Facebook group access remain unconfigured; Facebook sources are registered but disabled.
+AI remains unconfigured. Admin → Facebook supports public-post capture imports and best-effort public HTML checks for the nine registered groups. The supplied bookmarklet reads only the rendered post-body sibling, never comments, replies, credentials or reactions. The server whitelists post fields, validates group permalinks and deduplicates by post ID. Complete text becomes community content; truncated and media-only posts are retained as drafts. Private groups are marked inaccessible and never imported through the public collector. Browser captures are snapshots, not a permanent Facebook API connection.
 
 ## GitHub repository
 
 Source: https://github.com/skynexus91/Campia-Acum
 
 Install with `npm ci`, build with `npm run build`, and check with `npm test` plus `node scripts/check-extract.mjs`. Use Node.js 22 or newer. The Worker deployment requires an R2 bucket bound as `BUCKET` and the `ADMIN_EMAIL` secret; without that setting admin access is denied. `SERVICE_AUTH_TOKEN` is required for background service calls and is configured only on the hosting platform. Neither articles stored in R2 nor runtime secrets are part of this repository. The linked hourly cloud schedule is hosting configuration, not a local cron job.
+
+Facebook importer checks: `node scripts/check-facebook.mjs`. Scraped posts and local captures are never committed to GitHub.

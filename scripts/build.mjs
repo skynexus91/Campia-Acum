@@ -1,7 +1,8 @@
 import { mkdir, copyFile, readFile, writeFile } from 'node:fs/promises';
 import { build } from 'esbuild';
 import { fileURLToPath } from 'node:url';
-const html=await readFile('web/index.html','utf8');
+const collector=await readFile('web/facebook-collector.js','utf8');
+const html=(await readFile('web/index.html','utf8')).replace('/*FACEBOOK_COLLECTOR*/', 'const facebookCollector = '+JSON.stringify(collector)+';');
 const app=await readFile('worker/app.mjs','utf8');
 const bundled=app.replace("import { page } from './page.mjs';",'const page = '+JSON.stringify(html)+';');
 await mkdir('dist/server',{recursive:true});

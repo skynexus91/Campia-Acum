@@ -1,0 +1,11 @@
+import { mkdir, copyFile, readFile, writeFile } from 'node:fs/promises';
+import { build } from 'esbuild';
+import { fileURLToPath } from 'node:url';
+const html=await readFile('web/index.html','utf8');
+const app=await readFile('worker/app.mjs','utf8');
+const bundled=app.replace("import { page } from './page.mjs';",'const page = '+JSON.stringify(html)+';');
+await mkdir('dist/server',{recursive:true});
+await mkdir('dist/.openai',{recursive:true});
+await writeFile('dist/server/index.js',bundled);
+await build({stdin:{contents:bundled,resolveDir:fileURLToPath(new URL('../worker/',import.meta.url)),sourcefile:'app.mjs',loader:'js'},bundle:true,format:'esm',platform:'browser',target:'es2022',outfile:'dist/server/index.js',external:['canvas'],minify:true});
+await copyFile('.openai/hosting.json','dist/.openai/hosting.json');

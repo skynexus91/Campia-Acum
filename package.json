@@ -1,0 +1,1 @@
+{"name":"campia-acum","private":true,"type":"module","scripts":{"install:ci":"npm install --prefer-offline --no-audit --no-fund","build":"node scripts/build.mjs","test":"node scripts/check.mjs"},"dependencies":{"linkedom":"0.18.14"},"devDependencies":{"esbuild":"0.28.2"}}

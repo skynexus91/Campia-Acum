@@ -1,0 +1,33 @@
+import {readFile} from 'node:fs/promises';import assert from 'node:assert/strict';import vm from 'node:vm';
+const src=await readFile('dist/server/index.js','utf8');const mod=await import('data:text/javascript;base64,'+Buffer.from(src).toString('base64'));const worker=mod.default;
+class Bucket{map=new Map();async get(k){return this.map.has(k)?{json:async()=>structuredClone(this.map.get(k))}:null}async put(k,v){this.map.set(k,JSON.parse(v))}async list({prefix}){return{objects:[...this.map.keys()].filter(k=>k.startsWith(prefix)).map(key=>({key})),truncated:false}}}
+const bucket=new Bucket();const env={BUCKET:bucket,ADMIN_EMAIL:'admin@campia.local'};const call=(path,method='GET',body,auth=true,origin)=>worker.fetch(new Request('https://test.example'+path,{method,headers:{...(auth?{'oai-authenticated-user-email':'admin@campia.local'}:{}),...(origin?{origin}:{})},...(body?{body:JSON.stringify(body)}:{})}),env);
+for(const path of ['/','/admin']){const r=await call(path);assert.equal(r.status,200);const html=await r.text();for(const s of html.matchAll(/<script>([\s\S]*?)<\/script>/g))new vm.Script(s[1]);}
+assert.equal((await call('/api/admin/data','GET',null,false)).status,403);
+assert.equal((await call('/api/admin/categories','POST',{name:'Test'},true,'https://evil.example')).status,403);
+let r=await call('/api/admin/categories','POST',{name:'Test'});assert.equal(r.status,201);const cat=(await r.json()).record;
+r=await call('/api/admin/articles','POST',{title:'Articol de test',body:'Text editorial.\n\nAl doilea paragraf.',category:'Test',status:'draft'});assert.equal(r.status,201);const article=(await r.json()).record;
+await bucket.put('system/sync',JSON.stringify({updated:new Date().toISOString(),status:[]}));
+assert.equal((await(await call('/api/news')).json()).items.length,0,'Drafts are private');
+await call('/api/admin/articles/'+article.id,'PUT',{...article,status:'published'});
+let publicData=await(await call('/api/news')).json();assert.equal(publicData.items.length,1);assert.equal(publicData.items[0].body,article.body);assert(!('sourceUrl' in publicData.items[0]));
+assert.equal((await call('/api/admin/categories/'+cat.id,'DELETE')).status,400,'Cannot delete category in use');
+await call('/api/admin/categories/'+cat.id,'PUT',{name:'Redenumit'});
+assert.equal((await(await call('/api/news')).json()).items[0].category,'Redenumit');
+assert.equal((await call('/api/admin/sources','POST',{name:'Unsafe',url:'https://127.0.0.1/feed',type:'rss'})).status,400);
+assert.equal((await call('/api/admin/sources','POST',{name:'Unsafe',url:'http://example.com/feed',type:'rss'})).status,400);
+r=await call('/api/admin/sources','POST',{name:'Grup',url:'https://www.facebook.com/groups/1497945850509770/',type:'facebook',enabled:true});assert.equal(r.status,201);assert.equal((await r.json()).record.enabled,false);
+const parsed=await mod.parseFeed('<rss><channel><item><title><![CDATA[Titlu &amp; noutăți]]></title><link>https://example.com/news</link><description><![CDATA[<p>Text <b>curat</b>.</p><script>bad()</script>]]></description></item></channel></rss>',{id:'test',name:'Test',type:'rss'});assert.equal(parsed.length,1);assert(!parsed[0].body.includes('bad()'));assert(parsed[0].title.includes('&'));
+await call('/api/admin/articles/'+article.id,'DELETE');assert.equal((await(await call('/api/news')).json()).items.length,0);
+assert.equal((await call('/api/admin/categories/'+cat.id,'DELETE')).status,200);
+assert.equal((await call('/api/admin/articles','POST',{title:'Empty',body:'',category:'Actualitate',status:'published'})).status,400);
+console.log('Passed: auth, CSRF, drafts/publication, persistence, category rename/delete, RSS sanitization, SSRF validation, deletion, client JS parsing.');
+assert.equal((await call('/api/background/status','GET',null,false)).status,403);
+const serviceEnv={...env,SERVICE_AUTH_TOKEN:'test-service-token'};
+const serviceCall=(path,body,token='test-service-token')=>worker.fetch(new Request('https://test.example'+path,{method:body?'POST':'GET',headers:{'X-Background-Token':token},...(body?{body:JSON.stringify(body)}:{})}),serviceEnv);
+assert.equal((await serviceCall('/api/background/status',null,'wrong-token')).status,403);
+assert.equal((await serviceCall('/api/background/status')).status,200);
+assert.equal((await serviceCall('/api/background/run',{action:'configure',scheduleId:'verified-test-schedule'})).status,200);
+assert.equal((await serviceCall('/api/background/run',{action:'finish'})).status,200);
+const serviceStatus=await(await serviceCall('/api/background/status')).json();assert(serviceStatus.state.lastSuccessAt);assert.equal(serviceStatus.schedule.intervalMinutes,60);
+console.log('Passed: independent service authorization, schedule persistence and background success readback.');
